@@ -4,14 +4,20 @@
 [![docs.rs](https://img.shields.io/docsrs/stackboard)](https://docs.rs/stackboard)
 [![CI](https://github.com/wabuntu/stackboard/actions/workflows/rust.yml/badge.svg)](https://github.com/wabuntu/stackboard/actions/workflows/rust.yml)
 
-A TUI for browsing an OpenStack cloud, in the same spirit as `k9s` for
-Kubernetes: switch what you're looking at with a `:` command, drill into
-a resource for details, all without leaving the terminal or memorizing
-`openstack` subcommands.
+**Kubernetes has `k9s`. Docker has `lazydocker`. OpenStack didn't have
+anything like that — until now.**
+
+stackboard is a TUI for browsing an OpenStack cloud: switch what you're
+looking at with a `:` command, drill into a resource for details, all
+without leaving the terminal or memorizing `openstack` subcommands and
+piping their output through `grep`.
 
 ```
 $ stackboard
 ```
+
+<img src="https://raw.githubusercontent.com/wabuntu/stackboard/main/docs/list.png" alt="stackboard's server list, colored by status, with live counts in the header" width="620">
+<img src="https://raw.githubusercontent.com/wabuntu/stackboard/main/docs/detail.png" alt="stackboard's server detail popup, its border colored to match the server's status" width="620">
 
 ## Zero-config if you already use the `openstack` CLI
 
@@ -43,8 +49,12 @@ Keys:
 - `r`: refresh now
 - `q` / `Esc`: quit
 
-Rows are colored by status — green (`ACTIVE`), red (`ERROR`), yellow
+The header keeps a running count of active/error/other so trouble is
+visible before you even look at the list, and every row carries the same
+status color as a ● marker — green (`ACTIVE`), red (`ERROR`), yellow
 (`BUILD`/`REBOOT`/`MIGRATING`), muted blue-gray (`SHUTOFF`/`SUSPENDED`).
+Open a server's details and its popup border picks up the same color, so
+you never lose track of what you're looking at.
 
 ## What's in v0.1.0, and what isn't yet
 

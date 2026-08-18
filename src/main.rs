@@ -261,21 +261,64 @@ fn draw(frame: &mut Frame, app: &mut App) {
 }
 
 fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
-    let cmd_display = if app.command_mode {
-        format!(":{}_", app.command_buf)
+    use ratatui::text::Span;
+
+    let active = app.servers.iter().filter(|s| s.status == "ACTIVE").count();
+    let error = app.servers.iter().filter(|s| s.status == "ERROR").count();
+    let other = app.servers.len() - active - error;
+
+    let cmd_span = if app.command_mode {
+        Span::styled(
+            format!(" :{}_ ", app.command_buf),
+            Style::default()
+                .fg(Color::Rgb(40, 42, 54))
+                .bg(Color::Rgb(241, 250, 140))
+                .add_modifier(Modifier::BOLD),
+        )
     } else {
-        format!(":{}", app.kind.label())
+        Span::styled(
+            format!(" :{} ", app.kind.label()),
+            Style::default()
+                .fg(Color::Rgb(40, 42, 54))
+                .bg(Color::Rgb(189, 147, 249))
+                .add_modifier(Modifier::BOLD),
+        )
     };
-    let title = format!(
-        "stackboard — {} {}   {}",
-        app.servers.len(),
-        app.kind.label(),
-        cmd_display
-    );
-    let style = Style::default()
-        .fg(Color::Rgb(189, 147, 249))
-        .add_modifier(Modifier::BOLD);
-    frame.render_widget(Line::from(title).style(style), area);
+
+    let mut spans = vec![
+        Span::styled(
+            " stackboard ",
+            Style::default()
+                .fg(Color::Rgb(40, 42, 54))
+                .bg(Color::Rgb(255, 121, 198))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("  "),
+        cmd_span,
+        Span::raw("   "),
+        Span::styled(
+            format!("{active} active"),
+            Style::default().fg(Color::Rgb(80, 250, 123)),
+        ),
+    ];
+    if error > 0 {
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled(
+            format!("{error} error"),
+            Style::default()
+                .fg(Color::Rgb(255, 85, 85))
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+    if other > 0 {
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled(
+            format!("{other} other"),
+            Style::default().fg(Color::Rgb(98, 114, 164)),
+        ));
+    }
+
+    frame.render_widget(Line::from(spans), area);
 }
 
 fn status_color(status: &str) -> Color {
@@ -293,29 +336,46 @@ fn draw_servers(frame: &mut Frame, app: &mut App, area: Rect) {
         .servers
         .iter()
         .map(|s| {
+            let color = status_color(&s.status);
             Row::new(vec![
-                Cell::from(s.name.clone()),
-                Cell::from(s.status.clone()).style(Style::default().fg(status_color(&s.status))),
-                Cell::from(s.flavor.clone()),
-                Cell::from(s.addresses.join(", ")),
-                Cell::from(s.host.clone().unwrap_or_else(|| "-".to_string())),
+                Cell::from(s.name.clone()).style(Style::default().fg(Color::Rgb(248, 248, 242))),
+                Cell::from(format!("● {}", s.status))
+                    .style(Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                Cell::from(s.flavor.clone()).style(Style::default().fg(Color::Rgb(139, 233, 253))),
+                Cell::from(s.addresses.join(", "))
+                    .style(Style::default().fg(Color::Rgb(241, 250, 140))),
+                Cell::from(s.host.clone().unwrap_or_else(|| "-".to_string()))
+                    .style(Style::default().fg(Color::Rgb(189, 147, 249))),
             ])
         })
         .collect();
 
     let widths = [
         Constraint::Min(20),
-        Constraint::Length(10),
+        Constraint::Length(12),
         Constraint::Length(14),
         Constraint::Length(28),
         Constraint::Length(16),
     ];
     let table = Table::new(rows, widths)
         .header(
-            Row::new(vec!["NAME", "STATUS", "FLAVOR", "ADDRESSES", "HOST"])
-                .style(Style::default().add_modifier(Modifier::BOLD)),
+            Row::new(vec!["NAME", "STATUS", "FLAVOR", "ADDRESSES", "HOST"]).style(
+                Style::default()
+                    .fg(Color::Rgb(255, 121, 198))
+                    .add_modifier(Modifier::BOLD),
+            ),
         )
-        .block(Block::bordered().title(" servers "))
+        .block(
+            Block::bordered()
+                .border_style(Style::default().fg(Color::Rgb(98, 114, 164)))
+                .title(
+                    Line::from(" servers ").style(
+                        Style::default()
+                            .fg(Color::Rgb(189, 147, 249))
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ),
+        )
         .row_highlight_style(
             Style::default()
                 .bg(Color::Rgb(68, 71, 90))
@@ -338,14 +398,20 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         Color::Rgb(98, 114, 164)
     };
-    frame.render_widget(Line::from(text).style(Style::default().fg(color)), area);
+    let style = if app.error.is_some() {
+        Style::default().fg(color).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(color)
+    };
+    frame.render_widget(Line::from(text).style(style), area);
 }
 
 fn draw_server_detail(frame: &mut Frame, s: &Server) {
     let area = centered_rect(60, 11, frame.area());
     frame.render_widget(Clear, area);
+    let color = status_color(&s.status);
     let text = format!(
-        "Name:      {}\nID:        {}\nStatus:    {}\nFlavor:    {}\nHost:      {}\nAddresses: {}\nCreated:   {}\n\nany key: close",
+        "Name:      {}\nID:        {}\nStatus:    ● {}\nFlavor:    {}\nHost:      {}\nAddresses: {}\nCreated:   {}\n\nany key: close",
         s.name,
         s.id,
         s.status,
@@ -358,8 +424,11 @@ fn draw_server_detail(frame: &mut Frame, s: &Server) {
         .style(Style::default().fg(Color::Rgb(248, 248, 242)))
         .block(
             Block::bordered()
-                .border_style(Style::default().fg(Color::Rgb(189, 147, 249)))
-                .title(" Server details "),
+                .border_style(Style::default().fg(color))
+                .title(
+                    Line::from(" Server details ")
+                        .style(Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                ),
         );
     frame.render_widget(popup, area);
 }
