@@ -61,6 +61,25 @@ Deliberately left out of this version:
   against a mocked Keystone/Nova API). Write operations are coming once
   that verification is possible.
 
+## Testing against a real OpenStack
+
+No cloud handy? `scripts/setup-devstack-vm.sh` launches an isolated
+[multipass](https://multipass.run) VM and installs a minimal
+[DevStack](https://docs.openstack.org/devstack/latest/) (Keystone, Nova,
+Neutron, Glance, Cinder) inside it — DevStack makes invasive changes to
+whatever it's installed on, so it runs in a disposable VM rather than on
+your real machine. Takes 20-40 minutes; needs `multipass` (`sudo snap
+install multipass`), 8+ CPUs, 12GB+ RAM, and 60GB+ free disk.
+
+```
+$ ./scripts/setup-devstack-vm.sh
+...
+$ source ~/.devstack-devstack-credentials
+$ stackboard
+```
+
+Tear it down with `multipass delete --purge devstack` when you're done.
+
 ## Install
 
 - Cargo: `cargo install stackboard`
