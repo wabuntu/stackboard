@@ -1,0 +1,26 @@
+[package]
+name = "stackboard"
+version = "0.1.0"
+authors = ["wabuntu <to.wabuntu@proton.me>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+homepage = "https://github.com/wabuntu"
+repository = "https://github.com/wabuntu/stackboard"
+documentation = "https://docs.rs/stackboard"
+description = """
+TUI for browsing and operating an OpenStack cloud, like k9s for
+Kubernetes: switch resource types with a `:` command, drill into
+details, act on what you select.
+"""
+categories = ["command-line-utilities"]
+keywords = ["openstack", "tui", "k9s", "cloud", "cli"]
+
+[dependencies]
+clap = { version = "4.6.6", features = ["derive"] }
+ratatui = "0.30.2"
+crossterm = "0.29.0"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+rpassword = "7"
