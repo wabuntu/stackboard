@@ -13,6 +13,7 @@ details, act on what you select.
 """
 categories = ["command-line-utilities"]
 keywords = ["openstack", "tui", "k9s", "cloud", "cli"]
+exclude = ["binaries/*", "target/*"]
 
 [dependencies]
 clap = { version = "4.6.6", features = ["derive"] }
