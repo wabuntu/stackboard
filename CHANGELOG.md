@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/wabuntu/stackboard/compare/v0.1.0...v0.1.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* exclude build artifacts from crates.io package ([487abc2](https://github.com/wabuntu/stackboard/commit/487abc2070b4d01396c99d5f05f7f05b359791b6))
+
 ## 0.1.0 (2026-08-19)
 
 
