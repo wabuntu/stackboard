@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.0](https://github.com/wabuntu/stackboard/compare/v0.1.1...v0.2.0) (2026-08-19)
+
+
+### Features
+
+* add s to SSH into the selected server ([2a6e22e](https://github.com/wabuntu/stackboard/commit/2a6e22ec10995e9f2d219b75a7622e8c401a8316))
+* add server actions — delete, reboot, and power on/off ([719dc65](https://github.com/wabuntu/stackboard/commit/719dc65a4339870b6fedcd14e69f46b4a3d58791))
+
 ## [0.1.1](https://github.com/wabuntu/stackboard/compare/v0.1.0...v0.1.1) (2026-08-19)
 
 
