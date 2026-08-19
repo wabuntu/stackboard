@@ -1,7 +1,6 @@
 # stackboard
 
 [![Crates.io](https://img.shields.io/crates/v/stackboard.svg)](https://crates.io/crates/stackboard)
-[![docs.rs](https://img.shields.io/docsrs/stackboard)](https://docs.rs/stackboard)
 [![CI](https://github.com/wabuntu/stackboard/actions/workflows/rust.yml/badge.svg)](https://github.com/wabuntu/stackboard/actions/workflows/rust.yml)
 
 **Kubernetes has `k9s`. Docker has `lazydocker`. OpenStack didn't have
