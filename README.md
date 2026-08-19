@@ -55,20 +55,20 @@ status color as a ● marker — green (`ACTIVE`), red (`ERROR`), yellow
 Open a server's details and its popup border picks up the same color, so
 you never lose track of what you're looking at.
 
-## What's in v0.1.0, and what isn't yet
+## What's here, and what isn't yet
 
 This first version is read-only: it authenticates against Keystone,
-resolves the service catalog, and browses **servers** (Nova instances).
-Deliberately left out of this version:
+resolves the service catalog, and browses **servers** (Nova instances) —
+verified end-to-end against a real DevStack deployment, not just a mocked
+API. Deliberately left out of this version:
 
 - **Other resource types** (volumes, networks, images, projects) — the
   `:` command and internal resource-switching are built to make adding
   these straightforward, they're just not wired up yet.
 - **Actions** (delete, reboot, start/stop) — k9s-style tools live and die
-  by being safe to use against a real cluster, and this version hasn't
-  been run against a real OpenStack deployment yet (verified so far only
-  against a mocked Keystone/Nova API). Write operations are coming once
-  that verification is possible.
+  by being safe to use against a real cluster, so these are coming as a
+  deliberate next step now that read-only browsing is confirmed working
+  against a real cloud, not just a mock.
 
 ## Install
 
