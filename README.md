@@ -18,6 +18,9 @@ $ stackboard
 <img src="https://raw.githubusercontent.com/wabuntu/stackboard/main/docs/list.png" alt="stackboard's server list, colored by status, with live counts in the header" width="620">
 <img src="https://raw.githubusercontent.com/wabuntu/stackboard/main/docs/detail.png" alt="stackboard's server detail popup, its border colored to match the server's status" width="620">
 
+Both screenshots above are the real thing — captured against a live
+OpenStack (DevStack) cloud, not a mockup.
+
 ## Zero-config if you already use the `openstack` CLI
 
 stackboard reads credentials the exact same way the `openstack` CLI does —
@@ -31,6 +34,8 @@ only answer the questions once.
 ```
 $ stackboard setup   # run the wizard on demand, e.g. to add another cloud
 ```
+
+<img src="https://raw.githubusercontent.com/wabuntu/stackboard/main/docs/setup.png" alt="stackboard's setup wizard prompting for an auth URL, username, password, and project, then confirming it saved the result" width="620">
 
 ## Usage
 
