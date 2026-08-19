@@ -103,6 +103,50 @@ impl Session {
         resp.json()
             .map_err(|e| format!("bad response from {url}: {e}"))
     }
+
+    /// POSTs `body` to `path` against `service_type`'s catalog endpoint.
+    /// Used for Nova's action endpoint (reboot/stop/start), which replies
+    /// `202 Accepted` with no useful body, so the response isn't parsed.
+    pub fn post(&self, service_type: &str, path: &str, body: &Value) -> Result<(), String> {
+        let base = self.endpoint(service_type).ok_or_else(|| {
+            format!("no '{service_type}' endpoint in this cloud's service catalog")
+        })?;
+        let url = format!("{}{}", base.trim_end_matches('/'), path);
+        let resp = self
+            .http
+            .post(&url)
+            .header("X-Auth-Token", &self.token)
+            .header("Accept", "application/json")
+            .json(body)
+            .send()
+            .map_err(|e| format!("request to {url} failed: {e}"))?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().unwrap_or_default();
+            return Err(format!("{url} returned {status}: {text}"));
+        }
+        Ok(())
+    }
+
+    /// DELETEs `path` against `service_type`'s catalog endpoint.
+    pub fn delete(&self, service_type: &str, path: &str) -> Result<(), String> {
+        let base = self.endpoint(service_type).ok_or_else(|| {
+            format!("no '{service_type}' endpoint in this cloud's service catalog")
+        })?;
+        let url = format!("{}{}", base.trim_end_matches('/'), path);
+        let resp = self
+            .http
+            .delete(&url)
+            .header("X-Auth-Token", &self.token)
+            .send()
+            .map_err(|e| format!("request to {url} failed: {e}"))?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().unwrap_or_default();
+            return Err(format!("{url} returned {status}: {text}"));
+        }
+        Ok(())
+    }
 }
 
 /// Picks, per service type, the `public` interface endpoint (falling back

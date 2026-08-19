@@ -6,10 +6,11 @@
 **Kubernetes has `k9s`. Docker has `lazydocker`. OpenStack didn't have
 anything like that — until now.**
 
-stackboard is a TUI for browsing an OpenStack cloud: switch what you're
-looking at with a `:` command, drill into a resource for details, all
-without leaving the terminal or memorizing `openstack` subcommands and
-piping their output through `grep`.
+stackboard is a TUI for browsing and operating an OpenStack cloud: switch
+what you're looking at with a `:` command, drill into a resource for
+details, delete/reboot/start/stop it — all without leaving the terminal
+or memorizing `openstack` subcommands and piping their output through
+`grep`.
 
 ```
 $ stackboard
@@ -47,11 +48,21 @@ Keys:
 
 - `↑`/`↓`: move the selection
 - `Enter`: show details for the selected resource
+- `d`: delete the selected server
+- `b`: reboot it (soft reboot)
+- `p`: toggle power — stops an `ACTIVE` server, starts a `SHUTOFF` one
 - `:`: open the command bar — type a resource name and press Enter to
   switch what's shown (only `servers` exists in this version; more are
   coming)
 - `r`: refresh now
 - `q` / `Esc`: quit
+
+Every action asks first — `d`/`b`/`p` open a y/n confirmation popup
+naming the exact server before anything is sent, and only `y` (not
+Enter, not any other key) confirms it. Nothing fires on a stray
+keypress.
+
+<img src="https://raw.githubusercontent.com/wabuntu/stackboard/main/docs/confirm.png" alt="stackboard's delete confirmation popup, red-bordered, naming the exact server and warning it can't be undone" width="620">
 
 The header keeps a running count of active/error/other so trouble is
 visible before you even look at the list, and every row carries the same
@@ -62,18 +73,15 @@ you never lose track of what you're looking at.
 
 ## What's here, and what isn't yet
 
-This first version is read-only: it authenticates against Keystone,
-resolves the service catalog, and browses **servers** (Nova instances) —
-verified end-to-end against a real DevStack deployment, not just a mocked
-API. Deliberately left out of this version:
+This first version authenticates against Keystone, resolves the service
+catalog, and browses and operates on **servers** (Nova instances) —
+listing, detail view, delete, reboot, and start/stop are all verified
+end-to-end against a real DevStack deployment, not just a mocked API.
+Deliberately left out of this version:
 
 - **Other resource types** (volumes, networks, images, projects) — the
   `:` command and internal resource-switching are built to make adding
   these straightforward, they're just not wired up yet.
-- **Actions** (delete, reboot, start/stop) — k9s-style tools live and die
-  by being safe to use against a real cluster, so these are coming as a
-  deliberate next step now that read-only browsing is confirmed working
-  against a real cloud, not just a mock.
 
 ## Install
 

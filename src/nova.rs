@@ -26,6 +26,25 @@ pub fn list_servers(session: &Session) -> Result<Vec<Server>, String> {
         .collect())
 }
 
+pub fn delete_server(session: &Session, id: &str) -> Result<(), String> {
+    session.delete("compute", &format!("/servers/{id}"))
+}
+
+pub fn reboot_server(session: &Session, id: &str) -> Result<(), String> {
+    let body = serde_json::json!({ "reboot": { "type": "SOFT" } });
+    session.post("compute", &format!("/servers/{id}/action"), &body)
+}
+
+pub fn stop_server(session: &Session, id: &str) -> Result<(), String> {
+    let body = serde_json::json!({ "os-stop": null });
+    session.post("compute", &format!("/servers/{id}/action"), &body)
+}
+
+pub fn start_server(session: &Session, id: &str) -> Result<(), String> {
+    let body = serde_json::json!({ "os-start": null });
+    session.post("compute", &format!("/servers/{id}/action"), &body)
+}
+
 #[derive(Debug, Deserialize)]
 struct RawServerList {
     servers: Vec<RawServer>,

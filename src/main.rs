@@ -99,6 +99,45 @@ impl ResourceKind {
     }
 }
 
+/// A destructive-ish server action, gated behind a y/n confirmation
+/// popup before it's ever sent — these hit a real cloud, so nothing
+/// fires on a single keypress.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PendingAction {
+    Delete,
+    Reboot,
+    Stop,
+    Start,
+}
+
+impl PendingAction {
+    fn verb(self) -> &'static str {
+        match self {
+            PendingAction::Delete => "delete",
+            PendingAction::Reboot => "reboot",
+            PendingAction::Stop => "stop",
+            PendingAction::Start => "start",
+        }
+    }
+
+    fn verb_past(self) -> &'static str {
+        match self {
+            PendingAction::Delete => "deleted",
+            PendingAction::Reboot => "rebooted",
+            PendingAction::Stop => "stopped",
+            PendingAction::Start => "started",
+        }
+    }
+
+    fn color(self) -> Color {
+        match self {
+            PendingAction::Delete => Color::Rgb(255, 85, 85),
+            PendingAction::Reboot | PendingAction::Stop => Color::Rgb(241, 250, 140),
+            PendingAction::Start => Color::Rgb(80, 250, 123),
+        }
+    }
+}
+
 struct App {
     session: Session,
     kind: ResourceKind,
@@ -107,6 +146,7 @@ struct App {
     command_mode: bool,
     command_buf: String,
     show_detail: Option<usize>,
+    confirm_action: Option<(PendingAction, usize)>,
     status: Option<String>,
     error: Option<String>,
     last_refresh: Instant,
@@ -122,9 +162,37 @@ impl App {
             command_mode: false,
             command_buf: String::new(),
             show_detail: None,
+            confirm_action: None,
             status: None,
             error: None,
             last_refresh: Instant::now(),
+        }
+    }
+
+    /// Sends the confirmed action for the server at `idx`, then refreshes
+    /// so the list reflects the new state (or the row disappearing, for
+    /// delete) right away instead of waiting for the next poll.
+    fn run_action(&mut self, action: PendingAction, idx: usize) {
+        let Some(server) = self.servers.get(idx) else {
+            return;
+        };
+        let id = server.id.clone();
+        let name = server.name.clone();
+
+        let result = match action {
+            PendingAction::Delete => nova::delete_server(&self.session, &id),
+            PendingAction::Reboot => nova::reboot_server(&self.session, &id),
+            PendingAction::Stop => nova::stop_server(&self.session, &id),
+            PendingAction::Start => nova::start_server(&self.session, &id),
+        };
+
+        match result {
+            Ok(()) => {
+                self.status = Some(format!("{} {name}", action.verb_past()));
+                self.error = None;
+                self.refresh();
+            }
+            Err(e) => self.error = Some(e),
         }
     }
 
@@ -226,6 +294,17 @@ fn handle_key(app: &mut App, code: KeyCode) -> bool {
         return false;
     }
 
+    if let Some((action, idx)) = app.confirm_action {
+        match code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                app.confirm_action = None;
+                app.run_action(action, idx);
+            }
+            _ => app.confirm_action = None,
+        }
+        return false;
+    }
+
     match code {
         KeyCode::Char('q') | KeyCode::Esc => return true,
         KeyCode::Down => app.move_selection(true),
@@ -233,6 +312,26 @@ fn handle_key(app: &mut App, code: KeyCode) -> bool {
         KeyCode::Enter => app.show_detail = app.table_state.selected(),
         KeyCode::Char(':') => app.command_mode = true,
         KeyCode::Char('r') => app.refresh(),
+        KeyCode::Char('d') => {
+            if let Some(i) = app.table_state.selected() {
+                app.confirm_action = Some((PendingAction::Delete, i));
+            }
+        }
+        KeyCode::Char('b') => {
+            if let Some(i) = app.table_state.selected() {
+                app.confirm_action = Some((PendingAction::Reboot, i));
+            }
+        }
+        KeyCode::Char('p') => {
+            if let Some(i) = app.table_state.selected() {
+                match app.servers.get(i).map(|s| s.status.as_str()) {
+                    Some("ACTIVE") => app.confirm_action = Some((PendingAction::Stop, i)),
+                    Some("SHUTOFF") => app.confirm_action = Some((PendingAction::Start, i)),
+                    Some(other) => app.status = Some(format!("can't toggle power while {other}")),
+                    None => {}
+                }
+            }
+        }
         _ => {}
     }
     false
@@ -257,6 +356,12 @@ fn draw(frame: &mut Frame, app: &mut App) {
         && let Some(s) = app.servers.get(i)
     {
         draw_server_detail(frame, s);
+    }
+
+    if let Some((action, i)) = app.confirm_action
+        && let Some(s) = app.servers.get(i)
+    {
+        draw_confirm_popup(frame, action, &s.name);
     }
 }
 
@@ -391,7 +496,7 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     } else if let Some(status) = &app.status {
         status.clone()
     } else {
-        "↑/↓ select  Enter details  r refresh  : switch resource  q quit".to_string()
+        "↑/↓ select  Enter details  d delete  b reboot  p power  r refresh  : switch resource  q quit".to_string()
     };
     let color = if app.error.is_some() {
         Color::Rgb(255, 85, 85)
@@ -427,6 +532,30 @@ fn draw_server_detail(frame: &mut Frame, s: &Server) {
                 .border_style(Style::default().fg(color))
                 .title(
                     Line::from(" Server details ")
+                        .style(Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                ),
+        );
+    frame.render_widget(popup, area);
+}
+
+fn draw_confirm_popup(frame: &mut Frame, action: PendingAction, server_name: &str) {
+    let area = centered_rect(50, 6, frame.area());
+    frame.render_widget(Clear, area);
+    let color = action.color();
+    let verb = action.verb();
+    let warning = if action == PendingAction::Delete {
+        "\nThis cannot be undone."
+    } else {
+        ""
+    };
+    let text = format!("{verb} '{server_name}'?{warning}\n\ny confirm   any other key: cancel");
+    let popup = Paragraph::new(text)
+        .style(Style::default().fg(Color::Rgb(248, 248, 242)))
+        .block(
+            Block::bordered()
+                .border_style(Style::default().fg(color))
+                .title(
+                    Line::from(format!(" {} ", verb.to_uppercase()))
                         .style(Style::default().fg(color).add_modifier(Modifier::BOLD)),
                 ),
         );
