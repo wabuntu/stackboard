@@ -3,14 +3,11 @@
 [![Crates.io](https://img.shields.io/crates/v/stackboard.svg)](https://crates.io/crates/stackboard)
 [![CI](https://github.com/wabuntu/stackboard/actions/workflows/rust.yml/badge.svg)](https://github.com/wabuntu/stackboard/actions/workflows/rust.yml)
 
-**Kubernetes has `k9s`. Docker has `lazydocker`. OpenStack didn't have
-anything like that — until now.**
-
-stackboard is a TUI for browsing and operating an OpenStack cloud: switch
-what you're looking at with a `:` command, drill into a resource for
-details, delete/reboot/start/stop it — all without leaving the terminal
-or memorizing `openstack` subcommands and piping their output through
-`grep`.
+stackboard is a `k9s`-style TUI for browsing and operating an OpenStack
+cloud: switch what you're looking at with a `:` command, drill into a
+resource for details, delete/reboot/start/stop it — all without leaving
+the terminal or memorizing `openstack` subcommands and piping their
+output through `grep`.
 
 ```
 $ stackboard
