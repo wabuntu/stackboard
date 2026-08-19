@@ -147,6 +147,9 @@ struct App {
     command_buf: String,
     show_detail: Option<usize>,
     confirm_action: Option<(PendingAction, usize)>,
+    ssh_prompt: bool,
+    ssh_user_buf: String,
+    ssh_request: Option<(String, String)>,
     status: Option<String>,
     error: Option<String>,
     last_refresh: Instant,
@@ -163,6 +166,9 @@ impl App {
             command_buf: String::new(),
             show_detail: None,
             confirm_action: None,
+            ssh_prompt: false,
+            ssh_user_buf: "ubuntu".to_string(),
+            ssh_request: None,
             status: None,
             error: None,
             last_refresh: Instant::now(),
@@ -213,6 +219,18 @@ impl App {
         self.last_refresh = Instant::now();
     }
 
+    /// Picks which of a server's addresses to SSH to — an IPv4-looking one
+    /// if there is one (addresses are a flat, unlabeled list with no
+    /// network/floating-vs-fixed distinction kept), else whatever's first.
+    fn ssh_address(server: &Server) -> Option<&str> {
+        server
+            .addresses
+            .iter()
+            .find(|a| a.contains('.') && !a.contains(':'))
+            .or_else(|| server.addresses.first())
+            .map(|s| s.as_str())
+    }
+
     fn move_selection(&mut self, forward: bool) {
         let len = self.servers.len();
         if len == 0 {
@@ -245,6 +263,10 @@ fn run(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> std::io::Resul
             }
         }
 
+        if let Some((user, addr)) = app.ssh_request.take() {
+            ssh_shell_out(terminal, app, &user, &addr)?;
+        }
+
         if !app.command_mode
             && app.show_detail.is_none()
             && app.last_refresh.elapsed() >= refresh_interval
@@ -252,6 +274,34 @@ fn run(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> std::io::Resul
             app.refresh();
         }
     }
+}
+
+/// Leaves the TUI's alternate screen, runs an interactive `ssh` as a real
+/// child process with inherited stdio, then restores the TUI and forces a
+/// full redraw. `ssh` owns the terminal for the duration of the session —
+/// this is the same "step out, then back in" pattern editors use for
+/// `$EDITOR`.
+fn ssh_shell_out(
+    terminal: &mut ratatui::DefaultTerminal,
+    app: &mut App,
+    user: &str,
+    addr: &str,
+) -> std::io::Result<()> {
+    ratatui::restore();
+
+    let result = std::process::Command::new("ssh")
+        .arg(format!("{user}@{addr}"))
+        .status();
+
+    *terminal = ratatui::init();
+    terminal.clear()?;
+
+    app.status = Some(match result {
+        Ok(status) if status.success() => format!("ssh session to {addr} ended"),
+        Ok(status) => format!("ssh session to {addr} ended ({status})"),
+        Err(e) => format!("couldn't run ssh: {e}"),
+    });
+    Ok(())
 }
 
 /// Returns true if the app should quit.
@@ -294,6 +344,27 @@ fn handle_key(app: &mut App, code: KeyCode) -> bool {
         return false;
     }
 
+    if app.ssh_prompt {
+        match code {
+            KeyCode::Enter => {
+                app.ssh_prompt = false;
+                if let Some(i) = app.table_state.selected()
+                    && let Some(server) = app.servers.get(i)
+                    && let Some(addr) = App::ssh_address(server)
+                {
+                    app.ssh_request = Some((app.ssh_user_buf.clone(), addr.to_string()));
+                }
+            }
+            KeyCode::Esc => app.ssh_prompt = false,
+            KeyCode::Backspace => {
+                app.ssh_user_buf.pop();
+            }
+            KeyCode::Char(c) => app.ssh_user_buf.push(c),
+            _ => {}
+        }
+        return false;
+    }
+
     if let Some((action, idx)) = app.confirm_action {
         match code {
             KeyCode::Char('y') | KeyCode::Char('Y') => {
@@ -312,6 +383,14 @@ fn handle_key(app: &mut App, code: KeyCode) -> bool {
         KeyCode::Enter => app.show_detail = app.table_state.selected(),
         KeyCode::Char(':') => app.command_mode = true,
         KeyCode::Char('r') => app.refresh(),
+        KeyCode::Char('s') => {
+            if let Some(i) = app.table_state.selected() {
+                match app.servers.get(i).and_then(App::ssh_address) {
+                    Some(_) => app.ssh_prompt = true,
+                    None => app.status = Some("no address to connect to".to_string()),
+                }
+            }
+        }
         KeyCode::Char('d') => {
             if let Some(i) = app.table_state.selected() {
                 app.confirm_action = Some((PendingAction::Delete, i));
@@ -362,6 +441,14 @@ fn draw(frame: &mut Frame, app: &mut App) {
         && let Some(s) = app.servers.get(i)
     {
         draw_confirm_popup(frame, action, &s.name);
+    }
+
+    if app.ssh_prompt
+        && let Some(i) = app.table_state.selected()
+        && let Some(s) = app.servers.get(i)
+        && let Some(addr) = App::ssh_address(s)
+    {
+        draw_ssh_prompt(frame, &app.ssh_user_buf, addr);
     }
 }
 
@@ -496,7 +583,7 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     } else if let Some(status) = &app.status {
         status.clone()
     } else {
-        "↑/↓ select  Enter details  d delete  b reboot  p power  r refresh  : switch resource  q quit".to_string()
+        "↑/↓ select  Enter details  s ssh  d delete  b reboot  p power  r refresh  : switch resource  q quit".to_string()
     };
     let color = if app.error.is_some() {
         Color::Rgb(255, 85, 85)
@@ -562,6 +649,24 @@ fn draw_confirm_popup(frame: &mut Frame, action: PendingAction, server_name: &st
     frame.render_widget(popup, area);
 }
 
+fn draw_ssh_prompt(frame: &mut Frame, user_buf: &str, addr: &str) {
+    let area = centered_rect(50, 6, frame.area());
+    frame.render_widget(Clear, area);
+    let color = Color::Rgb(139, 233, 253);
+    let text = format!("ssh {user_buf}_@{addr}\n\nEnter: connect   Esc: cancel");
+    let popup = Paragraph::new(text)
+        .style(Style::default().fg(Color::Rgb(248, 248, 242)))
+        .block(
+            Block::bordered()
+                .border_style(Style::default().fg(color))
+                .title(
+                    Line::from(" SSH ")
+                        .style(Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                ),
+        );
+    frame.render_widget(popup, area);
+}
+
 fn centered_rect(pct_x: u16, rows: u16, area: Rect) -> Rect {
     let rows = rows.min(area.height);
     let vertical = Layout::vertical([
@@ -576,4 +681,43 @@ fn centered_rect(pct_x: u16, rows: u16, area: Rect) -> Rect {
         Constraint::Percentage((100 - pct_x) / 2),
     ])
     .split(vertical[1])[1]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn server_with_addresses(addresses: Vec<&str>) -> Server {
+        Server {
+            id: "1".to_string(),
+            name: "web-01".to_string(),
+            status: "ACTIVE".to_string(),
+            flavor: "m1.small".to_string(),
+            addresses: addresses.into_iter().map(str::to_string).collect(),
+            host: None,
+            created: String::new(),
+        }
+    }
+
+    #[test]
+    fn ssh_address_prefers_ipv4_over_ipv6() {
+        let server =
+            server_with_addresses(vec!["fd67:f86f:c18a:0:f816:3eff:fe14:4f6e", "10.0.0.58"]);
+        assert_eq!(App::ssh_address(&server), Some("10.0.0.58"));
+    }
+
+    #[test]
+    fn ssh_address_falls_back_to_first_when_no_ipv4() {
+        let server = server_with_addresses(vec!["fd67:f86f:c18a:0:f816:3eff:fe14:4f6e"]);
+        assert_eq!(
+            App::ssh_address(&server),
+            Some("fd67:f86f:c18a:0:f816:3eff:fe14:4f6e")
+        );
+    }
+
+    #[test]
+    fn ssh_address_is_none_with_no_addresses() {
+        let server = server_with_addresses(vec![]);
+        assert_eq!(App::ssh_address(&server), None);
+    }
 }

@@ -45,6 +45,8 @@ Keys:
 
 - `↑`/`↓`: move the selection
 - `Enter`: show details for the selected resource
+- `s`: SSH to the selected server — type a username (remembered for next
+  time) and press Enter to shell out to a real, interactive `ssh` session
 - `d`: delete the selected server
 - `b`: reboot it (soft reboot)
 - `p`: toggle power — stops an `ACTIVE` server, starts a `SHUTOFF` one
@@ -54,7 +56,11 @@ Keys:
 - `r`: refresh now
 - `q` / `Esc`: quit
 
-Every action asks first — `d`/`b`/`p` open a y/n confirmation popup
+`s` picks an IPv4 address off the server automatically (there's no
+floating-IP-vs-fixed distinction to go on yet, so it's a best guess),
+suspends the TUI, and hands the terminal to a real `ssh` — the exact
+same "step out, then back in" pattern editors use for `$EDITOR`. Every
+other action asks first — `d`/`b`/`p` open a y/n confirmation popup
 naming the exact server before anything is sent, and only `y` (not
 Enter, not any other key) confirms it. Nothing fires on a stray
 keypress.
