@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/wabuntu/stackboard/compare/v0.5.0...v0.6.0) (2026-08-20)
+
+
+### Features
+
+* delete volumes, networks, images, and security groups ([6931603](https://github.com/wabuntu/stackboard/commit/693160326f0c5fa22f515f50d4deb60681c11bed))
+
 ## [0.5.0](https://github.com/wabuntu/stackboard/compare/v0.4.0...v0.5.0) (2026-08-20)
 
 
