@@ -51,9 +51,9 @@ Keys:
 - `d`: delete the selected server
 - `b`: reboot it (soft reboot)
 - `p`: toggle power — stops an `ACTIVE` server, starts a `SHUTOFF` one
-- `:`: open the command bar — type a resource name (`servers` or
-  `volumes`) and press Enter to switch what's shown; more resource
-  types are coming
+- `:`: open the command bar — type a resource name (`servers`,
+  `volumes`, `networks`, `images`, or `secgroups`) and press Enter to
+  switch what's shown; more resource types are coming
 - `r`: refresh now
 - `q` / `Esc`: quit
 
@@ -78,17 +78,19 @@ you never lose track of what you're looking at.
 ## What's here, and what isn't yet
 
 stackboard authenticates against Keystone, resolves the service catalog,
-and browses **servers** (Nova) and **volumes** (Cinder) — all verified
+and browses **servers** (Nova), **volumes** (Cinder), **networks**,
+**images** (Glance), and **security groups** (Neutron) — all verified
 end-to-end against a real DevStack deployment, not just a mocked API.
 Servers can be operated on directly (delete/reboot/start-stop/ssh);
-volumes are browse-only for now. Deliberately left out of this version:
+everything else is browse-only for now. Deliberately left out of this
+version:
 
-- **Other resource types** (networks, images, projects) — the `:`
+- **More resource types** (projects, ports, routers, ...) — the `:`
   command and internal resource-switching are built to make adding
   these straightforward, they're just not wired up yet.
-- **Volume actions** (delete, attach/detach) — following servers'
-  lead, these come once there's a clear, safe interaction to build
-  around them.
+- **Actions on anything but servers** (delete a volume, edit a security
+  group rule, ...) — following servers' lead, these come once there's
+  a clear, safe interaction to build around each one.
 
 ## Install
 

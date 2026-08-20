@@ -1,12 +1,16 @@
 mod auth;
 mod cinder;
 mod client;
+mod glance;
+mod neutron;
 mod nova;
 
 use cinder::Volume;
 use clap::{Parser, Subcommand};
 use client::Session;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use glance::Image;
+use neutron::{Network, SecurityGroup};
 use nova::Server;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -84,6 +88,9 @@ fn main() {
 enum ResourceKind {
     Servers,
     Volumes,
+    Networks,
+    Images,
+    SecurityGroups,
 }
 
 impl ResourceKind {
@@ -91,6 +98,11 @@ impl ResourceKind {
         match s {
             "servers" | "server" | "vm" | "vms" => Some(ResourceKind::Servers),
             "volumes" | "volume" | "vol" | "vols" => Some(ResourceKind::Volumes),
+            "networks" | "network" | "net" | "nets" => Some(ResourceKind::Networks),
+            "images" | "image" | "img" | "imgs" => Some(ResourceKind::Images),
+            "secgroups" | "secgroup" | "sg" | "sgs" | "security-groups" => {
+                Some(ResourceKind::SecurityGroups)
+            }
             _ => None,
         }
     }
@@ -99,6 +111,9 @@ impl ResourceKind {
         match self {
             ResourceKind::Servers => "servers",
             ResourceKind::Volumes => "volumes",
+            ResourceKind::Networks => "networks",
+            ResourceKind::Images => "images",
+            ResourceKind::SecurityGroups => "secgroups",
         }
     }
 }
@@ -147,6 +162,9 @@ struct App {
     kind: ResourceKind,
     servers: Vec<Server>,
     volumes: Vec<Volume>,
+    networks: Vec<Network>,
+    images: Vec<Image>,
+    security_groups: Vec<SecurityGroup>,
     table_state: TableState,
     command_mode: bool,
     command_buf: String,
@@ -167,6 +185,9 @@ impl App {
             kind: ResourceKind::Servers,
             servers: Vec::new(),
             volumes: Vec::new(),
+            networks: Vec::new(),
+            images: Vec::new(),
+            security_groups: Vec::new(),
             table_state: TableState::default(),
             command_mode: false,
             command_buf: String::new(),
@@ -226,6 +247,30 @@ impl App {
                 }
                 Err(e) => self.error = Some(e),
             },
+            ResourceKind::Networks => match neutron::list_networks(&self.session) {
+                Ok(mut networks) => {
+                    networks.sort_by(|a, b| a.name.cmp(&b.name));
+                    self.networks = networks;
+                    self.error = None;
+                }
+                Err(e) => self.error = Some(e),
+            },
+            ResourceKind::Images => match glance::list_images(&self.session) {
+                Ok(mut images) => {
+                    images.sort_by(|a, b| a.name.cmp(&b.name));
+                    self.images = images;
+                    self.error = None;
+                }
+                Err(e) => self.error = Some(e),
+            },
+            ResourceKind::SecurityGroups => match neutron::list_security_groups(&self.session) {
+                Ok(mut security_groups) => {
+                    security_groups.sort_by(|a, b| a.name.cmp(&b.name));
+                    self.security_groups = security_groups;
+                    self.error = None;
+                }
+                Err(e) => self.error = Some(e),
+            },
         }
         if self.table_state.selected().is_none() && self.current_len() > 0 {
             self.table_state.select(Some(0));
@@ -237,6 +282,9 @@ impl App {
         match self.kind {
             ResourceKind::Servers => self.servers.len(),
             ResourceKind::Volumes => self.volumes.len(),
+            ResourceKind::Networks => self.networks.len(),
+            ResourceKind::Images => self.images.len(),
+            ResourceKind::SecurityGroups => self.security_groups.len(),
         }
     }
 
@@ -341,7 +389,7 @@ fn handle_key(app: &mut App, code: KeyCode) -> bool {
                     }
                     None if !cmd.is_empty() => {
                         app.status = Some(format!(
-                            "unknown resource: {cmd} (available: servers, volumes)"
+                            "unknown resource: {cmd} (available: servers, volumes, networks, images, secgroups)"
                         ));
                     }
                     None => {}
@@ -450,6 +498,9 @@ fn draw(frame: &mut Frame, app: &mut App) {
     match app.kind {
         ResourceKind::Servers => draw_servers(frame, app, layout[1]),
         ResourceKind::Volumes => draw_volumes(frame, app, layout[1]),
+        ResourceKind::Networks => draw_networks(frame, app, layout[1]),
+        ResourceKind::Images => draw_images(frame, app, layout[1]),
+        ResourceKind::SecurityGroups => draw_security_groups(frame, app, layout[1]),
     }
     draw_status(frame, app, layout[2]);
 
@@ -463,6 +514,21 @@ fn draw(frame: &mut Frame, app: &mut App) {
             ResourceKind::Volumes => {
                 if let Some(v) = app.volumes.get(i) {
                     draw_volume_detail(frame, v);
+                }
+            }
+            ResourceKind::Networks => {
+                if let Some(n) = app.networks.get(i) {
+                    draw_network_detail(frame, n);
+                }
+            }
+            ResourceKind::Images => {
+                if let Some(img) = app.images.get(i) {
+                    draw_image_detail(frame, img);
+                }
+            }
+            ResourceKind::SecurityGroups => {
+                if let Some(sg) = app.security_groups.get(i) {
+                    draw_security_group_detail(frame, sg);
                 }
             }
         }
@@ -501,6 +567,27 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
                 .filter(|v| v.status.starts_with("error"))
                 .count(),
             app.volumes.len(),
+        ),
+        ResourceKind::Networks => (
+            app.networks.iter().filter(|n| n.status == "ACTIVE").count(),
+            "active",
+            app.networks.iter().filter(|n| n.status == "ERROR").count(),
+            app.networks.len(),
+        ),
+        ResourceKind::Images => (
+            app.images.iter().filter(|i| i.status == "active").count(),
+            "active",
+            app.images
+                .iter()
+                .filter(|i| matches!(i.status.as_str(), "killed" | "deleted"))
+                .count(),
+            app.images.len(),
+        ),
+        ResourceKind::SecurityGroups => (
+            app.security_groups.len(),
+            "groups",
+            0,
+            app.security_groups.len(),
         ),
     };
     let other = total - good - error;
@@ -690,6 +777,173 @@ fn draw_volumes(frame: &mut Frame, app: &mut App, area: Rect) {
     frame.render_stateful_widget(table, area, &mut app.table_state);
 }
 
+fn draw_networks(frame: &mut Frame, app: &mut App, area: Rect) {
+    let rows: Vec<Row> = app
+        .networks
+        .iter()
+        .map(|n| {
+            let color = status_color(&n.status);
+            Row::new(vec![
+                Cell::from(n.name.clone()).style(Style::default().fg(Color::Rgb(248, 248, 242))),
+                Cell::from(format!("● {}", n.status))
+                    .style(Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                Cell::from(if n.external { "yes" } else { "no" })
+                    .style(Style::default().fg(Color::Rgb(139, 233, 253))),
+                Cell::from(if n.shared { "yes" } else { "no" })
+                    .style(Style::default().fg(Color::Rgb(241, 250, 140))),
+                Cell::from(n.subnet_count.to_string())
+                    .style(Style::default().fg(Color::Rgb(189, 147, 249))),
+            ])
+        })
+        .collect();
+
+    let widths = [
+        Constraint::Min(20),
+        Constraint::Length(12),
+        Constraint::Length(10),
+        Constraint::Length(8),
+        Constraint::Length(10),
+    ];
+    let table = Table::new(rows, widths)
+        .header(
+            Row::new(vec!["NAME", "STATUS", "EXTERNAL", "SHARED", "SUBNETS"]).style(
+                Style::default()
+                    .fg(Color::Rgb(255, 121, 198))
+                    .add_modifier(Modifier::BOLD),
+            ),
+        )
+        .block(
+            Block::bordered()
+                .border_style(Style::default().fg(Color::Rgb(98, 114, 164)))
+                .title(
+                    Line::from(" networks ").style(
+                        Style::default()
+                            .fg(Color::Rgb(189, 147, 249))
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ),
+        )
+        .row_highlight_style(
+            Style::default()
+                .bg(Color::Rgb(68, 71, 90))
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▶ ");
+    frame.render_stateful_widget(table, area, &mut app.table_state);
+}
+
+fn image_status_color(status: &str) -> Color {
+    match status {
+        "active" => Color::Rgb(80, 250, 123),
+        "killed" | "deleted" | "pending_delete" => Color::Rgb(255, 85, 85),
+        "queued" | "saving" | "importing" => Color::Rgb(241, 250, 140),
+        _ => Color::Rgb(248, 248, 242),
+    }
+}
+
+fn draw_images(frame: &mut Frame, app: &mut App, area: Rect) {
+    let rows: Vec<Row> = app
+        .images
+        .iter()
+        .map(|img| {
+            let color = image_status_color(&img.status);
+            Row::new(vec![
+                Cell::from(img.name.clone()).style(Style::default().fg(Color::Rgb(248, 248, 242))),
+                Cell::from(format!("● {}", img.status))
+                    .style(Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                Cell::from(img.disk_format.clone())
+                    .style(Style::default().fg(Color::Rgb(139, 233, 253))),
+                Cell::from(format!("{} MB", img.size_mb))
+                    .style(Style::default().fg(Color::Rgb(241, 250, 140))),
+                Cell::from(img.visibility.clone())
+                    .style(Style::default().fg(Color::Rgb(189, 147, 249))),
+            ])
+        })
+        .collect();
+
+    let widths = [
+        Constraint::Min(20),
+        Constraint::Length(12),
+        Constraint::Length(10),
+        Constraint::Length(12),
+        Constraint::Length(12),
+    ];
+    let table = Table::new(rows, widths)
+        .header(
+            Row::new(vec!["NAME", "STATUS", "FORMAT", "SIZE", "VISIBILITY"]).style(
+                Style::default()
+                    .fg(Color::Rgb(255, 121, 198))
+                    .add_modifier(Modifier::BOLD),
+            ),
+        )
+        .block(
+            Block::bordered()
+                .border_style(Style::default().fg(Color::Rgb(98, 114, 164)))
+                .title(
+                    Line::from(" images ").style(
+                        Style::default()
+                            .fg(Color::Rgb(189, 147, 249))
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ),
+        )
+        .row_highlight_style(
+            Style::default()
+                .bg(Color::Rgb(68, 71, 90))
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▶ ");
+    frame.render_stateful_widget(table, area, &mut app.table_state);
+}
+
+fn draw_security_groups(frame: &mut Frame, app: &mut App, area: Rect) {
+    let rows: Vec<Row> = app
+        .security_groups
+        .iter()
+        .map(|sg| {
+            Row::new(vec![
+                Cell::from(sg.name.clone()).style(Style::default().fg(Color::Rgb(248, 248, 242))),
+                Cell::from(sg.description.clone())
+                    .style(Style::default().fg(Color::Rgb(241, 250, 140))),
+                Cell::from(sg.rule_count.to_string())
+                    .style(Style::default().fg(Color::Rgb(139, 233, 253))),
+            ])
+        })
+        .collect();
+
+    let widths = [
+        Constraint::Min(20),
+        Constraint::Min(30),
+        Constraint::Length(8),
+    ];
+    let table = Table::new(rows, widths)
+        .header(
+            Row::new(vec!["NAME", "DESCRIPTION", "RULES"]).style(
+                Style::default()
+                    .fg(Color::Rgb(255, 121, 198))
+                    .add_modifier(Modifier::BOLD),
+            ),
+        )
+        .block(
+            Block::bordered()
+                .border_style(Style::default().fg(Color::Rgb(98, 114, 164)))
+                .title(
+                    Line::from(" security groups ").style(
+                        Style::default()
+                            .fg(Color::Rgb(189, 147, 249))
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ),
+        )
+        .row_highlight_style(
+            Style::default()
+                .bg(Color::Rgb(68, 71, 90))
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▶ ");
+    frame.render_stateful_widget(table, area, &mut app.table_state);
+}
+
 fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     let text = if let Some(err) = &app.error {
         format!("error: {err}")
@@ -698,7 +952,7 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         match app.kind {
             ResourceKind::Servers => "↑/↓ select  Enter details  s ssh  d delete  b reboot  p power  r refresh  : switch resource  q quit".to_string(),
-            ResourceKind::Volumes => "↑/↓ select  Enter details  r refresh  : switch resource  q quit".to_string(),
+            _ => "↑/↓ select  Enter details  r refresh  : switch resource  q quit".to_string(),
         }
     };
     let color = if app.error.is_some() {
@@ -762,6 +1016,69 @@ fn draw_volume_detail(frame: &mut Frame, v: &Volume) {
                 .border_style(Style::default().fg(color))
                 .title(
                     Line::from(" Volume details ")
+                        .style(Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                ),
+        );
+    frame.render_widget(popup, area);
+}
+
+fn draw_network_detail(frame: &mut Frame, n: &Network) {
+    let area = centered_rect(60, 10, frame.area());
+    frame.render_widget(Clear, area);
+    let color = status_color(&n.status);
+    let text = format!(
+        "Name:     {}\nID:       {}\nStatus:   ● {}\nExternal: {}\nShared:   {}\nSubnets:  {}\nCreated:  {}\n\nany key: close",
+        n.name, n.id, n.status, n.external, n.shared, n.subnet_count, n.created,
+    );
+    let popup = Paragraph::new(text)
+        .style(Style::default().fg(Color::Rgb(248, 248, 242)))
+        .block(
+            Block::bordered()
+                .border_style(Style::default().fg(color))
+                .title(
+                    Line::from(" Network details ")
+                        .style(Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                ),
+        );
+    frame.render_widget(popup, area);
+}
+
+fn draw_image_detail(frame: &mut Frame, img: &Image) {
+    let area = centered_rect(60, 10, frame.area());
+    frame.render_widget(Clear, area);
+    let color = image_status_color(&img.status);
+    let text = format!(
+        "Name:       {}\nID:         {}\nStatus:     ● {}\nFormat:     {}\nSize:       {} MB\nVisibility: {}\nCreated:    {}\n\nany key: close",
+        img.name, img.id, img.status, img.disk_format, img.size_mb, img.visibility, img.created,
+    );
+    let popup = Paragraph::new(text)
+        .style(Style::default().fg(Color::Rgb(248, 248, 242)))
+        .block(
+            Block::bordered()
+                .border_style(Style::default().fg(color))
+                .title(
+                    Line::from(" Image details ")
+                        .style(Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                ),
+        );
+    frame.render_widget(popup, area);
+}
+
+fn draw_security_group_detail(frame: &mut Frame, sg: &SecurityGroup) {
+    let area = centered_rect(60, 9, frame.area());
+    frame.render_widget(Clear, area);
+    let color = Color::Rgb(189, 147, 249);
+    let text = format!(
+        "Name:        {}\nID:          {}\nDescription: {}\nRules:       {}\nCreated:     {}\n\nany key: close",
+        sg.name, sg.id, sg.description, sg.rule_count, sg.created,
+    );
+    let popup = Paragraph::new(text)
+        .style(Style::default().fg(Color::Rgb(248, 248, 242)))
+        .block(
+            Block::bordered()
+                .border_style(Style::default().fg(color))
+                .title(
+                    Line::from(" Security group details ")
                         .style(Style::default().fg(color).add_modifier(Modifier::BOLD)),
                 ),
         );
