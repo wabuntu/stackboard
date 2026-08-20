@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/wabuntu/stackboard/compare/v0.2.0...v0.3.0) (2026-08-20)
+
+
+### Features
+
+* browse volumes with :volumes ([9c2ebef](https://github.com/wabuntu/stackboard/commit/9c2ebef0b9b32dae99a60e3cd01feb992b4d0cdf))
+
 ## [0.2.0](https://github.com/wabuntu/stackboard/compare/v0.1.1...v0.2.0) (2026-08-19)
 
 
