@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/wabuntu/stackboard/compare/v0.4.0...v0.5.0) (2026-08-20)
+
+
+### Features
+
+* browse projects with :projects ([392bdcc](https://github.com/wabuntu/stackboard/commit/392bdcc53942f302ab43c50484421603a2aa22f2))
+
 ## [0.4.0](https://github.com/wabuntu/stackboard/compare/v0.3.0...v0.4.0) (2026-08-20)
 
 
