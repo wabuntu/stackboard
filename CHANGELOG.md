@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/wabuntu/stackboard/compare/v0.3.0...v0.4.0) (2026-08-20)
+
+
+### Features
+
+* browse networks, images, and security groups ([8e392ee](https://github.com/wabuntu/stackboard/commit/8e392ee42dc72e1701592d5f44da67641d6b80d9))
+
 ## [0.3.0](https://github.com/wabuntu/stackboard/compare/v0.2.0...v0.3.0) (2026-08-20)
 
 
