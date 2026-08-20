@@ -1,7 +1,9 @@
 mod auth;
+mod cinder;
 mod client;
 mod nova;
 
+use cinder::Volume;
 use clap::{Parser, Subcommand};
 use client::Session;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
@@ -75,19 +77,20 @@ fn main() {
     }
 }
 
-/// Which resource type is currently shown. Only Servers is implemented in
-/// this version — the `:` command bar and this enum exist so adding
-/// volumes/networks/images later is just a new match arm, matching k9s's
-/// resource-switching model.
+/// Which resource type is currently shown. The `:` command bar and this
+/// enum are built so adding networks/images later is just a new match
+/// arm, matching k9s's resource-switching model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ResourceKind {
     Servers,
+    Volumes,
 }
 
 impl ResourceKind {
     fn from_command(s: &str) -> Option<ResourceKind> {
         match s {
             "servers" | "server" | "vm" | "vms" => Some(ResourceKind::Servers),
+            "volumes" | "volume" | "vol" | "vols" => Some(ResourceKind::Volumes),
             _ => None,
         }
     }
@@ -95,6 +98,7 @@ impl ResourceKind {
     fn label(self) -> &'static str {
         match self {
             ResourceKind::Servers => "servers",
+            ResourceKind::Volumes => "volumes",
         }
     }
 }
@@ -142,6 +146,7 @@ struct App {
     session: Session,
     kind: ResourceKind,
     servers: Vec<Server>,
+    volumes: Vec<Volume>,
     table_state: TableState,
     command_mode: bool,
     command_buf: String,
@@ -161,6 +166,7 @@ impl App {
             session,
             kind: ResourceKind::Servers,
             servers: Vec::new(),
+            volumes: Vec::new(),
             table_state: TableState::default(),
             command_mode: false,
             command_buf: String::new(),
@@ -209,14 +215,29 @@ impl App {
                     servers.sort_by(|a, b| a.name.cmp(&b.name));
                     self.servers = servers;
                     self.error = None;
-                    if self.table_state.selected().is_none() && !self.servers.is_empty() {
-                        self.table_state.select(Some(0));
-                    }
+                }
+                Err(e) => self.error = Some(e),
+            },
+            ResourceKind::Volumes => match cinder::list_volumes(&self.session) {
+                Ok(mut volumes) => {
+                    volumes.sort_by(|a, b| a.name.cmp(&b.name));
+                    self.volumes = volumes;
+                    self.error = None;
                 }
                 Err(e) => self.error = Some(e),
             },
         }
+        if self.table_state.selected().is_none() && self.current_len() > 0 {
+            self.table_state.select(Some(0));
+        }
         self.last_refresh = Instant::now();
+    }
+
+    fn current_len(&self) -> usize {
+        match self.kind {
+            ResourceKind::Servers => self.servers.len(),
+            ResourceKind::Volumes => self.volumes.len(),
+        }
     }
 
     /// Picks which of a server's addresses to SSH to — an IPv4-looking one
@@ -232,7 +253,7 @@ impl App {
     }
 
     fn move_selection(&mut self, forward: bool) {
-        let len = self.servers.len();
+        let len = self.current_len();
         if len == 0 {
             return;
         }
@@ -320,7 +341,7 @@ fn handle_key(app: &mut App, code: KeyCode) -> bool {
                     }
                     None if !cmd.is_empty() => {
                         app.status = Some(format!(
-                            "unknown resource: {cmd} (only 'servers' is available so far)"
+                            "unknown resource: {cmd} (available: servers, volumes)"
                         ));
                     }
                     None => {}
@@ -383,7 +404,7 @@ fn handle_key(app: &mut App, code: KeyCode) -> bool {
         KeyCode::Enter => app.show_detail = app.table_state.selected(),
         KeyCode::Char(':') => app.command_mode = true,
         KeyCode::Char('r') => app.refresh(),
-        KeyCode::Char('s') => {
+        KeyCode::Char('s') if app.kind == ResourceKind::Servers => {
             if let Some(i) = app.table_state.selected() {
                 match app.servers.get(i).and_then(App::ssh_address) {
                     Some(_) => app.ssh_prompt = true,
@@ -391,17 +412,17 @@ fn handle_key(app: &mut App, code: KeyCode) -> bool {
                 }
             }
         }
-        KeyCode::Char('d') => {
+        KeyCode::Char('d') if app.kind == ResourceKind::Servers => {
             if let Some(i) = app.table_state.selected() {
                 app.confirm_action = Some((PendingAction::Delete, i));
             }
         }
-        KeyCode::Char('b') => {
+        KeyCode::Char('b') if app.kind == ResourceKind::Servers => {
             if let Some(i) = app.table_state.selected() {
                 app.confirm_action = Some((PendingAction::Reboot, i));
             }
         }
-        KeyCode::Char('p') => {
+        KeyCode::Char('p') if app.kind == ResourceKind::Servers => {
             if let Some(i) = app.table_state.selected() {
                 match app.servers.get(i).map(|s| s.status.as_str()) {
                     Some("ACTIVE") => app.confirm_action = Some((PendingAction::Stop, i)),
@@ -428,13 +449,23 @@ fn draw(frame: &mut Frame, app: &mut App) {
     draw_header(frame, app, layout[0]);
     match app.kind {
         ResourceKind::Servers => draw_servers(frame, app, layout[1]),
+        ResourceKind::Volumes => draw_volumes(frame, app, layout[1]),
     }
     draw_status(frame, app, layout[2]);
 
-    if let Some(i) = app.show_detail
-        && let Some(s) = app.servers.get(i)
-    {
-        draw_server_detail(frame, s);
+    if let Some(i) = app.show_detail {
+        match app.kind {
+            ResourceKind::Servers => {
+                if let Some(s) = app.servers.get(i) {
+                    draw_server_detail(frame, s);
+                }
+            }
+            ResourceKind::Volumes => {
+                if let Some(v) = app.volumes.get(i) {
+                    draw_volume_detail(frame, v);
+                }
+            }
+        }
     }
 
     if let Some((action, i)) = app.confirm_action
@@ -455,9 +486,24 @@ fn draw(frame: &mut Frame, app: &mut App) {
 fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
     use ratatui::text::Span;
 
-    let active = app.servers.iter().filter(|s| s.status == "ACTIVE").count();
-    let error = app.servers.iter().filter(|s| s.status == "ERROR").count();
-    let other = app.servers.len() - active - error;
+    let (good, good_label, error, total) = match app.kind {
+        ResourceKind::Servers => (
+            app.servers.iter().filter(|s| s.status == "ACTIVE").count(),
+            "active",
+            app.servers.iter().filter(|s| s.status == "ERROR").count(),
+            app.servers.len(),
+        ),
+        ResourceKind::Volumes => (
+            app.volumes.iter().filter(|v| v.status == "in-use").count(),
+            "in-use",
+            app.volumes
+                .iter()
+                .filter(|v| v.status.starts_with("error"))
+                .count(),
+            app.volumes.len(),
+        ),
+    };
+    let other = total - good - error;
 
     let cmd_span = if app.command_mode {
         Span::styled(
@@ -489,7 +535,7 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
         cmd_span,
         Span::raw("   "),
         Span::styled(
-            format!("{active} active"),
+            format!("{good} {good_label}"),
             Style::default().fg(Color::Rgb(80, 250, 123)),
         ),
     ];
@@ -577,13 +623,83 @@ fn draw_servers(frame: &mut Frame, app: &mut App, area: Rect) {
     frame.render_stateful_widget(table, area, &mut app.table_state);
 }
 
+fn volume_status_color(status: &str) -> Color {
+    match status {
+        "available" => Color::Rgb(80, 250, 123),
+        "in-use" => Color::Rgb(139, 233, 253),
+        s if s.starts_with("error") => Color::Rgb(255, 85, 85),
+        "creating" | "attaching" | "detaching" | "deleting" | "downloading" | "extending" => {
+            Color::Rgb(241, 250, 140)
+        }
+        _ => Color::Rgb(248, 248, 242),
+    }
+}
+
+fn draw_volumes(frame: &mut Frame, app: &mut App, area: Rect) {
+    let rows: Vec<Row> = app
+        .volumes
+        .iter()
+        .map(|v| {
+            let color = volume_status_color(&v.status);
+            Row::new(vec![
+                Cell::from(v.name.clone()).style(Style::default().fg(Color::Rgb(248, 248, 242))),
+                Cell::from(format!("● {}", v.status))
+                    .style(Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                Cell::from(format!("{} GB", v.size_gb))
+                    .style(Style::default().fg(Color::Rgb(139, 233, 253))),
+                Cell::from(v.volume_type.clone())
+                    .style(Style::default().fg(Color::Rgb(241, 250, 140))),
+                Cell::from(v.attached_to.clone().unwrap_or_else(|| "-".to_string()))
+                    .style(Style::default().fg(Color::Rgb(189, 147, 249))),
+            ])
+        })
+        .collect();
+
+    let widths = [
+        Constraint::Min(20),
+        Constraint::Length(14),
+        Constraint::Length(10),
+        Constraint::Length(16),
+        Constraint::Length(24),
+    ];
+    let table = Table::new(rows, widths)
+        .header(
+            Row::new(vec!["NAME", "STATUS", "SIZE", "TYPE", "ATTACHED"]).style(
+                Style::default()
+                    .fg(Color::Rgb(255, 121, 198))
+                    .add_modifier(Modifier::BOLD),
+            ),
+        )
+        .block(
+            Block::bordered()
+                .border_style(Style::default().fg(Color::Rgb(98, 114, 164)))
+                .title(
+                    Line::from(" volumes ").style(
+                        Style::default()
+                            .fg(Color::Rgb(189, 147, 249))
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ),
+        )
+        .row_highlight_style(
+            Style::default()
+                .bg(Color::Rgb(68, 71, 90))
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▶ ");
+    frame.render_stateful_widget(table, area, &mut app.table_state);
+}
+
 fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     let text = if let Some(err) = &app.error {
         format!("error: {err}")
     } else if let Some(status) = &app.status {
         status.clone()
     } else {
-        "↑/↓ select  Enter details  s ssh  d delete  b reboot  p power  r refresh  : switch resource  q quit".to_string()
+        match app.kind {
+            ResourceKind::Servers => "↑/↓ select  Enter details  s ssh  d delete  b reboot  p power  r refresh  : switch resource  q quit".to_string(),
+            ResourceKind::Volumes => "↑/↓ select  Enter details  r refresh  : switch resource  q quit".to_string(),
+        }
     };
     let color = if app.error.is_some() {
         Color::Rgb(255, 85, 85)
@@ -619,6 +735,33 @@ fn draw_server_detail(frame: &mut Frame, s: &Server) {
                 .border_style(Style::default().fg(color))
                 .title(
                     Line::from(" Server details ")
+                        .style(Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                ),
+        );
+    frame.render_widget(popup, area);
+}
+
+fn draw_volume_detail(frame: &mut Frame, v: &Volume) {
+    let area = centered_rect(60, 10, frame.area());
+    frame.render_widget(Clear, area);
+    let color = volume_status_color(&v.status);
+    let text = format!(
+        "Name:     {}\nID:       {}\nStatus:   ● {}\nSize:     {} GB\nType:     {}\nAttached: {}\nCreated:  {}\n\nany key: close",
+        v.name,
+        v.id,
+        v.status,
+        v.size_gb,
+        v.volume_type,
+        v.attached_to.as_deref().unwrap_or("-"),
+        v.created,
+    );
+    let popup = Paragraph::new(text)
+        .style(Style::default().fg(Color::Rgb(248, 248, 242)))
+        .block(
+            Block::bordered()
+                .border_style(Style::default().fg(color))
+                .title(
+                    Line::from(" Volume details ")
                         .style(Style::default().fg(color).add_modifier(Modifier::BOLD)),
                 ),
         );

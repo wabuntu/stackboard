@@ -15,8 +15,9 @@ $ stackboard
 
 <img src="https://raw.githubusercontent.com/wabuntu/stackboard/main/docs/list.png" alt="stackboard's server list, colored by status, with live counts in the header" width="620">
 <img src="https://raw.githubusercontent.com/wabuntu/stackboard/main/docs/detail.png" alt="stackboard's server detail popup, its border colored to match the server's status" width="620">
+<img src="https://raw.githubusercontent.com/wabuntu/stackboard/main/docs/volumes.png" alt="stackboard's volume list after switching resource type with :volumes" width="620">
 
-Both screenshots above are the real thing — captured against a live
+All screenshots above are the real thing — captured against a live
 OpenStack (DevStack) cloud, not a mockup.
 
 ## Zero-config if you already use the `openstack` CLI
@@ -50,9 +51,9 @@ Keys:
 - `d`: delete the selected server
 - `b`: reboot it (soft reboot)
 - `p`: toggle power — stops an `ACTIVE` server, starts a `SHUTOFF` one
-- `:`: open the command bar — type a resource name and press Enter to
-  switch what's shown (only `servers` exists in this version; more are
-  coming)
+- `:`: open the command bar — type a resource name (`servers` or
+  `volumes`) and press Enter to switch what's shown; more resource
+  types are coming
 - `r`: refresh now
 - `q` / `Esc`: quit
 
@@ -76,15 +77,18 @@ you never lose track of what you're looking at.
 
 ## What's here, and what isn't yet
 
-This first version authenticates against Keystone, resolves the service
-catalog, and browses and operates on **servers** (Nova instances) —
-listing, detail view, delete, reboot, and start/stop are all verified
+stackboard authenticates against Keystone, resolves the service catalog,
+and browses **servers** (Nova) and **volumes** (Cinder) — all verified
 end-to-end against a real DevStack deployment, not just a mocked API.
-Deliberately left out of this version:
+Servers can be operated on directly (delete/reboot/start-stop/ssh);
+volumes are browse-only for now. Deliberately left out of this version:
 
-- **Other resource types** (volumes, networks, images, projects) — the
-  `:` command and internal resource-switching are built to make adding
+- **Other resource types** (networks, images, projects) — the `:`
+  command and internal resource-switching are built to make adding
   these straightforward, they're just not wired up yet.
+- **Volume actions** (delete, attach/detach) — following servers'
+  lead, these come once there's a clear, safe interaction to build
+  around them.
 
 ## Install
 
