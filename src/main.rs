@@ -209,21 +209,70 @@ impl App {
         }
     }
 
-    /// Sends the confirmed action for the server at `idx`, then refreshes
-    /// so the list reflects the new state (or the row disappearing, for
-    /// delete) right away instead of waiting for the next poll.
+    /// Sends the confirmed action for the resource at `idx` in whichever
+    /// list `self.kind` currently shows, then refreshes so the list
+    /// reflects the new state (or the row disappearing, for delete) right
+    /// away instead of waiting for the next poll. Reboot/stop/start only
+    /// make sense for servers; delete is wired up for every kind except
+    /// projects (deleting a whole tenant is a different category of
+    /// destructive than deleting one resource in it).
     fn run_action(&mut self, action: PendingAction, idx: usize) {
-        let Some(server) = self.servers.get(idx) else {
-            return;
-        };
-        let id = server.id.clone();
-        let name = server.name.clone();
-
-        let result = match action {
-            PendingAction::Delete => nova::delete_server(&self.session, &id),
-            PendingAction::Reboot => nova::reboot_server(&self.session, &id),
-            PendingAction::Stop => nova::stop_server(&self.session, &id),
-            PendingAction::Start => nova::start_server(&self.session, &id),
+        let (result, name) = match (self.kind, action) {
+            (ResourceKind::Servers, PendingAction::Delete) => {
+                let Some(s) = self.servers.get(idx) else {
+                    return;
+                };
+                (nova::delete_server(&self.session, &s.id), s.name.clone())
+            }
+            (ResourceKind::Servers, PendingAction::Reboot) => {
+                let Some(s) = self.servers.get(idx) else {
+                    return;
+                };
+                (nova::reboot_server(&self.session, &s.id), s.name.clone())
+            }
+            (ResourceKind::Servers, PendingAction::Stop) => {
+                let Some(s) = self.servers.get(idx) else {
+                    return;
+                };
+                (nova::stop_server(&self.session, &s.id), s.name.clone())
+            }
+            (ResourceKind::Servers, PendingAction::Start) => {
+                let Some(s) = self.servers.get(idx) else {
+                    return;
+                };
+                (nova::start_server(&self.session, &s.id), s.name.clone())
+            }
+            (ResourceKind::Volumes, PendingAction::Delete) => {
+                let Some(v) = self.volumes.get(idx) else {
+                    return;
+                };
+                (cinder::delete_volume(&self.session, &v.id), v.name.clone())
+            }
+            (ResourceKind::Networks, PendingAction::Delete) => {
+                let Some(n) = self.networks.get(idx) else {
+                    return;
+                };
+                (
+                    neutron::delete_network(&self.session, &n.id),
+                    n.name.clone(),
+                )
+            }
+            (ResourceKind::Images, PendingAction::Delete) => {
+                let Some(i) = self.images.get(idx) else {
+                    return;
+                };
+                (glance::delete_image(&self.session, &i.id), i.name.clone())
+            }
+            (ResourceKind::SecurityGroups, PendingAction::Delete) => {
+                let Some(sg) = self.security_groups.get(idx) else {
+                    return;
+                };
+                (
+                    neutron::delete_security_group(&self.session, &sg.id),
+                    sg.name.clone(),
+                )
+            }
+            _ => return,
         };
 
         match result {
@@ -476,7 +525,16 @@ fn handle_key(app: &mut App, code: KeyCode) -> bool {
                 }
             }
         }
-        KeyCode::Char('d') if app.kind == ResourceKind::Servers => {
+        KeyCode::Char('d')
+            if matches!(
+                app.kind,
+                ResourceKind::Servers
+                    | ResourceKind::Volumes
+                    | ResourceKind::Networks
+                    | ResourceKind::Images
+                    | ResourceKind::SecurityGroups
+            ) =>
+        {
             if let Some(i) = app.table_state.selected() {
                 app.confirm_action = Some((PendingAction::Delete, i));
             }
@@ -556,10 +614,18 @@ fn draw(frame: &mut Frame, app: &mut App) {
         }
     }
 
-    if let Some((action, i)) = app.confirm_action
-        && let Some(s) = app.servers.get(i)
-    {
-        draw_confirm_popup(frame, action, &s.name);
+    if let Some((action, i)) = app.confirm_action {
+        let name = match app.kind {
+            ResourceKind::Servers => app.servers.get(i).map(|s| s.name.as_str()),
+            ResourceKind::Volumes => app.volumes.get(i).map(|v| v.name.as_str()),
+            ResourceKind::Networks => app.networks.get(i).map(|n| n.name.as_str()),
+            ResourceKind::Images => app.images.get(i).map(|img| img.name.as_str()),
+            ResourceKind::SecurityGroups => app.security_groups.get(i).map(|sg| sg.name.as_str()),
+            ResourceKind::Projects => None,
+        };
+        if let Some(name) = name {
+            draw_confirm_popup(frame, action, name);
+        }
     }
 
     if app.ssh_prompt
@@ -1040,7 +1106,16 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         match app.kind {
             ResourceKind::Servers => "↑/↓ select  Enter details  s ssh  d delete  b reboot  p power  r refresh  : switch resource  q quit".to_string(),
-            _ => "↑/↓ select  Enter details  r refresh  : switch resource  q quit".to_string(),
+            ResourceKind::Volumes
+            | ResourceKind::Networks
+            | ResourceKind::Images
+            | ResourceKind::SecurityGroups => {
+                "↑/↓ select  Enter details  d delete  r refresh  : switch resource  q quit"
+                    .to_string()
+            }
+            ResourceKind::Projects => {
+                "↑/↓ select  Enter details  r refresh  : switch resource  q quit".to_string()
+            }
         }
     };
     let color = if app.error.is_some() {

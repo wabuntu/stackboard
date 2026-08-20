@@ -12,6 +12,10 @@ pub struct Volume {
     pub created: String,
 }
 
+pub fn delete_volume(session: &Session, id: &str) -> Result<(), String> {
+    session.delete("block-storage", &format!("/volumes/{id}"))
+}
+
 pub fn list_volumes(session: &Session) -> Result<Vec<Volume>, String> {
     let body = session.get("block-storage", "/volumes/detail")?;
     let parsed: RawVolumeList = serde_json::from_value(body)

@@ -21,6 +21,14 @@ pub struct SecurityGroup {
     pub created: String,
 }
 
+pub fn delete_network(session: &Session, id: &str) -> Result<(), String> {
+    session.delete("network", &format!("/v2.0/networks/{id}"))
+}
+
+pub fn delete_security_group(session: &Session, id: &str) -> Result<(), String> {
+    session.delete("network", &format!("/v2.0/security-groups/{id}"))
+}
+
 pub fn list_networks(session: &Session) -> Result<Vec<Network>, String> {
     let body = session.get("network", "/v2.0/networks")?;
     let parsed: RawNetworkList = serde_json::from_value(body)

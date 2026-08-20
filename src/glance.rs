@@ -12,6 +12,10 @@ pub struct Image {
     pub created: String,
 }
 
+pub fn delete_image(session: &Session, id: &str) -> Result<(), String> {
+    session.delete("image", &format!("/v2/images/{id}"))
+}
+
 pub fn list_images(session: &Session) -> Result<Vec<Image>, String> {
     let body = session.get("image", "/v2/images")?;
     let parsed: RawImageList = serde_json::from_value(body)

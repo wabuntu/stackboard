@@ -48,8 +48,9 @@ Keys:
 - `Enter`: show details for the selected resource
 - `s`: SSH to the selected server — type a username (remembered for next
   time) and press Enter to shell out to a real, interactive `ssh` session
-- `d`: delete the selected server
-- `b`: reboot it (soft reboot)
+- `d`: delete the selected resource — servers, volumes, networks,
+  images, and security groups; not projects
+- `b`: reboot the selected server (soft reboot)
 - `p`: toggle power — stops an `ACTIVE` server, starts a `SHUTOFF` one
 - `:`: open the command bar — type a resource name (`servers`,
   `volumes`, `networks`, `images`, `secgroups`, or `projects`) and
@@ -62,7 +63,7 @@ floating-IP-vs-fixed distinction to go on yet, so it's a best guess),
 suspends the TUI, and hands the terminal to a real `ssh` — the exact
 same "step out, then back in" pattern editors use for `$EDITOR`. Every
 other action asks first — `d`/`b`/`p` open a y/n confirmation popup
-naming the exact server before anything is sent, and only `y` (not
+naming the exact resource before anything is sent, and only `y` (not
 Enter, not any other key) confirms it. Nothing fires on a stray
 keypress.
 
@@ -81,16 +82,19 @@ stackboard authenticates against Keystone, resolves the service catalog,
 and browses **servers** (Nova), **volumes** (Cinder), **networks** and
 **security groups** (Neutron), **images** (Glance), and **projects**
 (Keystone) — all verified end-to-end against a real DevStack deployment,
-not just a mocked API. Servers can be operated on directly
-(delete/reboot/start-stop/ssh); everything else is browse-only for now.
-Deliberately left out of this version:
+not just a mocked API. Servers get the full set (delete/reboot/
+start-stop/ssh); volumes, networks, images, and security groups can be
+deleted; projects are browse-only — deleting a whole tenant is a
+different category of destructive than deleting one resource in it, so
+that's deliberately not wired up. Deliberately left out of this
+version:
 
 - **More resource types** (ports, routers, flavors, ...) — the `:`
   command and internal resource-switching are built to make adding
   these straightforward, they're just not wired up yet.
-- **Actions on anything but servers** (delete a volume, edit a security
-  group rule, ...) — following servers' lead, these come once there's
-  a clear, safe interaction to build around each one.
+- **More actions** (reboot/power for anything but servers, attach/
+  detach a volume, edit a security group rule, ...) — each needs its
+  own safe, clear interaction, same as delete did.
 
 ## Install
 
