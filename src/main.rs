@@ -2,6 +2,7 @@ mod auth;
 mod cinder;
 mod client;
 mod glance;
+mod keystone;
 mod neutron;
 mod nova;
 
@@ -10,6 +11,7 @@ use clap::{Parser, Subcommand};
 use client::Session;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use glance::Image;
+use keystone::Project;
 use neutron::{Network, SecurityGroup};
 use nova::Server;
 use ratatui::Frame;
@@ -91,6 +93,7 @@ enum ResourceKind {
     Networks,
     Images,
     SecurityGroups,
+    Projects,
 }
 
 impl ResourceKind {
@@ -103,6 +106,7 @@ impl ResourceKind {
             "secgroups" | "secgroup" | "sg" | "sgs" | "security-groups" => {
                 Some(ResourceKind::SecurityGroups)
             }
+            "projects" | "project" | "proj" | "tenants" => Some(ResourceKind::Projects),
             _ => None,
         }
     }
@@ -114,6 +118,7 @@ impl ResourceKind {
             ResourceKind::Networks => "networks",
             ResourceKind::Images => "images",
             ResourceKind::SecurityGroups => "secgroups",
+            ResourceKind::Projects => "projects",
         }
     }
 }
@@ -165,6 +170,7 @@ struct App {
     networks: Vec<Network>,
     images: Vec<Image>,
     security_groups: Vec<SecurityGroup>,
+    projects: Vec<Project>,
     table_state: TableState,
     command_mode: bool,
     command_buf: String,
@@ -188,6 +194,7 @@ impl App {
             networks: Vec::new(),
             images: Vec::new(),
             security_groups: Vec::new(),
+            projects: Vec::new(),
             table_state: TableState::default(),
             command_mode: false,
             command_buf: String::new(),
@@ -271,6 +278,14 @@ impl App {
                 }
                 Err(e) => self.error = Some(e),
             },
+            ResourceKind::Projects => match keystone::list_projects(&self.session) {
+                Ok(mut projects) => {
+                    projects.sort_by(|a, b| a.name.cmp(&b.name));
+                    self.projects = projects;
+                    self.error = None;
+                }
+                Err(e) => self.error = Some(e),
+            },
         }
         if self.table_state.selected().is_none() && self.current_len() > 0 {
             self.table_state.select(Some(0));
@@ -285,6 +300,7 @@ impl App {
             ResourceKind::Networks => self.networks.len(),
             ResourceKind::Images => self.images.len(),
             ResourceKind::SecurityGroups => self.security_groups.len(),
+            ResourceKind::Projects => self.projects.len(),
         }
     }
 
@@ -389,7 +405,7 @@ fn handle_key(app: &mut App, code: KeyCode) -> bool {
                     }
                     None if !cmd.is_empty() => {
                         app.status = Some(format!(
-                            "unknown resource: {cmd} (available: servers, volumes, networks, images, secgroups)"
+                            "unknown resource: {cmd} (available: servers, volumes, networks, images, secgroups, projects)"
                         ));
                     }
                     None => {}
@@ -501,6 +517,7 @@ fn draw(frame: &mut Frame, app: &mut App) {
         ResourceKind::Networks => draw_networks(frame, app, layout[1]),
         ResourceKind::Images => draw_images(frame, app, layout[1]),
         ResourceKind::SecurityGroups => draw_security_groups(frame, app, layout[1]),
+        ResourceKind::Projects => draw_projects(frame, app, layout[1]),
     }
     draw_status(frame, app, layout[2]);
 
@@ -529,6 +546,11 @@ fn draw(frame: &mut Frame, app: &mut App) {
             ResourceKind::SecurityGroups => {
                 if let Some(sg) = app.security_groups.get(i) {
                     draw_security_group_detail(frame, sg);
+                }
+            }
+            ResourceKind::Projects => {
+                if let Some(p) = app.projects.get(i) {
+                    draw_project_detail(frame, p);
                 }
             }
         }
@@ -588,6 +610,12 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
             "groups",
             0,
             app.security_groups.len(),
+        ),
+        ResourceKind::Projects => (
+            app.projects.iter().filter(|p| p.enabled).count(),
+            "enabled",
+            0,
+            app.projects.len(),
         ),
     };
     let other = total - good - error;
@@ -944,6 +972,66 @@ fn draw_security_groups(frame: &mut Frame, app: &mut App, area: Rect) {
     frame.render_stateful_widget(table, area, &mut app.table_state);
 }
 
+fn draw_projects(frame: &mut Frame, app: &mut App, area: Rect) {
+    let rows: Vec<Row> = app
+        .projects
+        .iter()
+        .map(|p| {
+            let color = if p.enabled {
+                Color::Rgb(80, 250, 123)
+            } else {
+                Color::Rgb(98, 114, 164)
+            };
+            Row::new(vec![
+                Cell::from(p.name.clone()).style(Style::default().fg(Color::Rgb(248, 248, 242))),
+                Cell::from(if p.enabled {
+                    "● enabled"
+                } else {
+                    "○ disabled"
+                })
+                .style(Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                Cell::from(p.description.clone())
+                    .style(Style::default().fg(Color::Rgb(241, 250, 140))),
+                Cell::from(p.domain_id.clone())
+                    .style(Style::default().fg(Color::Rgb(189, 147, 249))),
+            ])
+        })
+        .collect();
+
+    let widths = [
+        Constraint::Min(20),
+        Constraint::Length(12),
+        Constraint::Min(30),
+        Constraint::Length(12),
+    ];
+    let table = Table::new(rows, widths)
+        .header(
+            Row::new(vec!["NAME", "STATUS", "DESCRIPTION", "DOMAIN"]).style(
+                Style::default()
+                    .fg(Color::Rgb(255, 121, 198))
+                    .add_modifier(Modifier::BOLD),
+            ),
+        )
+        .block(
+            Block::bordered()
+                .border_style(Style::default().fg(Color::Rgb(98, 114, 164)))
+                .title(
+                    Line::from(" projects ").style(
+                        Style::default()
+                            .fg(Color::Rgb(189, 147, 249))
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ),
+        )
+        .row_highlight_style(
+            Style::default()
+                .bg(Color::Rgb(68, 71, 90))
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▶ ");
+    frame.render_stateful_widget(table, area, &mut app.table_state);
+}
+
 fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     let text = if let Some(err) = &app.error {
         format!("error: {err}")
@@ -1079,6 +1167,32 @@ fn draw_security_group_detail(frame: &mut Frame, sg: &SecurityGroup) {
                 .border_style(Style::default().fg(color))
                 .title(
                     Line::from(" Security group details ")
+                        .style(Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                ),
+        );
+    frame.render_widget(popup, area);
+}
+
+fn draw_project_detail(frame: &mut Frame, p: &Project) {
+    let area = centered_rect(60, 9, frame.area());
+    frame.render_widget(Clear, area);
+    let color = if p.enabled {
+        Color::Rgb(80, 250, 123)
+    } else {
+        Color::Rgb(98, 114, 164)
+    };
+    let status = if p.enabled { "enabled" } else { "disabled" };
+    let text = format!(
+        "Name:        {}\nID:          {}\nStatus:      ● {}\nDomain:      {}\nDescription: {}\n\nany key: close",
+        p.name, p.id, status, p.domain_id, p.description,
+    );
+    let popup = Paragraph::new(text)
+        .style(Style::default().fg(Color::Rgb(248, 248, 242)))
+        .block(
+            Block::bordered()
+                .border_style(Style::default().fg(color))
+                .title(
+                    Line::from(" Project details ")
                         .style(Style::default().fg(color).add_modifier(Modifier::BOLD)),
                 ),
         );
