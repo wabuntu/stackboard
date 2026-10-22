@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/wabuntu/stackboard/compare/v0.6.0...v0.7.0) (2026-10-22)
+
+
+### Features
+
+* verify TLS with the OS certificate verifier, add --cacert ([#8](https://github.com/wabuntu/stackboard/issues/8)) ([dbb0754](https://github.com/wabuntu/stackboard/commit/dbb0754aeee9d33d2a8c225d0897d5e48e152441))
+
 ## [0.6.0](https://github.com/wabuntu/stackboard/compare/v0.5.0...v0.6.0) (2026-08-20)
 
 
