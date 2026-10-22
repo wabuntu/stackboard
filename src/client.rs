@@ -17,11 +17,22 @@ impl Session {
     /// POSTs a password-authenticated, project-scoped token request to
     /// Keystone and parses the returned service catalog. `auth_url` is
     /// expected to already include the API version path (e.g. `.../v3`).
-    pub fn login(auth: &CloudAuth) -> Result<Session, String> {
+    ///
+    /// Server certificates are checked by the operating system's verifier
+    /// (via rustls-platform-verifier), not by a root list built into the
+    /// binary. On Windows and macOS this includes the OS blocklist of
+    /// distrusted certificates and revocation checks; on Linux it uses the
+    /// system CA bundle. `extra_roots` are trusted in addition to the OS store (for a
+    /// private CA); they never replace it.
+    pub fn login(
+        auth: &CloudAuth,
+        extra_roots: Vec<reqwest::Certificate>,
+    ) -> Result<Session, String> {
         let http = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(15))
+            .tls_certs_merge(extra_roots)
             .build()
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("could not set up the HTTPS client: {e}"))?;
 
         let mut identity = json!({
             "methods": ["password"],
@@ -50,7 +61,7 @@ impl Session {
             .post(&url)
             .json(&body)
             .send()
-            .map_err(|e| format!("could not reach {url}: {e}"))?;
+            .map_err(|e| format!("could not reach {url}: {}", error_chain(&e)))?;
 
         if !resp.status().is_success() {
             let status = resp.status();
@@ -94,7 +105,7 @@ impl Session {
             .header("X-Auth-Token", &self.token)
             .header("Accept", "application/json")
             .send()
-            .map_err(|e| format!("request to {url} failed: {e}"))?;
+            .map_err(|e| format!("request to {url} failed: {}", error_chain(&e)))?;
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().unwrap_or_default();
@@ -119,7 +130,7 @@ impl Session {
             .header("Accept", "application/json")
             .json(body)
             .send()
-            .map_err(|e| format!("request to {url} failed: {e}"))?;
+            .map_err(|e| format!("request to {url} failed: {}", error_chain(&e)))?;
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().unwrap_or_default();
@@ -139,7 +150,7 @@ impl Session {
             .delete(&url)
             .header("X-Auth-Token", &self.token)
             .send()
-            .map_err(|e| format!("request to {url} failed: {e}"))?;
+            .map_err(|e| format!("request to {url} failed: {}", error_chain(&e)))?;
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().unwrap_or_default();
@@ -147,6 +158,23 @@ impl Session {
         }
         Ok(())
     }
+}
+
+/// Formats an error with all of its causes. reqwest's own message is only
+/// "error sending request", and the real reason (for example a TLS
+/// certificate problem) is in the source chain.
+fn error_chain(err: &dyn std::error::Error) -> String {
+    let mut text = err.to_string();
+    let mut source = err.source();
+    while let Some(cause) = source {
+        let cause_text = cause.to_string();
+        if !text.contains(&cause_text) {
+            text.push_str(": ");
+            text.push_str(&cause_text);
+        }
+        source = cause.source();
+    }
+    text
 }
 
 /// Picks, per service type, the `public` interface endpoint (falling back

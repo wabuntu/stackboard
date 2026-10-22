@@ -36,6 +36,33 @@ $ stackboard setup   # run the wizard on demand, e.g. to add another cloud
 
 <img src="https://raw.githubusercontent.com/wabuntu/stackboard/main/docs/setup.png" alt="stackboard's setup wizard prompting for an auth URL, username, password, and project, then confirming it saved the result" width="620">
 
+## TLS and certificates
+
+stackboard checks server certificates with your operating system's
+certificate store and verifier. It does not use a certificate list
+built into the program. When your OS stops trusting a certificate
+authority, stackboard stops trusting it too.
+
+- Windows and macOS: the OS checks the certificate. This includes the
+  OS list of blocked certificates and revocation checks.
+- Linux: stackboard uses the system CA bundle (for example
+  `/etc/ssl/certs`). Keep your `ca-certificates` package up to date.
+  There is no revocation check on Linux.
+
+If your cloud uses a private CA, give stackboard the CA certificate as
+a PEM file. The file can hold more than one certificate. These
+certificates are trusted in addition to the OS store.
+
+```
+$ stackboard --cacert /path/to/ca.pem
+$ OS_CACERT=/path/to/ca.pem stackboard
+```
+
+stackboard also reads `cacert` from the cloud entry in `clouds.yaml`.
+The order is: `--cacert`, then `OS_CACERT`, then `clouds.yaml`.
+
+There is no option to turn off certificate checks.
+
 ## Usage
 
 ```
