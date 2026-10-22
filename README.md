@@ -2,6 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/stackboard.svg)](https://crates.io/crates/stackboard)
 [![CI](https://github.com/wabuntu/stackboard/actions/workflows/rust.yml/badge.svg)](https://github.com/wabuntu/stackboard/actions/workflows/rust.yml)
+[![Security audit](https://github.com/wabuntu/stackboard/actions/workflows/audit.yml/badge.svg)](https://github.com/wabuntu/stackboard/actions/workflows/audit.yml)
 
 stackboard is a `k9s`-style TUI for browsing and operating an OpenStack
 cloud: switch what you're looking at with a `:` command, drill into a
@@ -150,6 +151,22 @@ left out of this version:
 - **Multi-cloud switching within the TUI** — `clouds.yaml` already
   supports naming several clouds; picking between them mid-session
   (rather than only at startup) isn't wired up yet.
+
+## Quality checks
+
+Every push runs these checks in GitHub Actions:
+
+- Build and test on Linux, macOS and Windows.
+- `cargo fmt --check` for formatting.
+- `cargo clippy` with all warnings treated as errors.
+- `cargo audit` against the RustSec advisory database.
+
+A separate job runs `cargo audit` every Monday, even when the code does not
+change. New advisories for our dependencies show up there first.
+
+Example: on 2026-10-22 the audit found RUSTSEC-2026-0382 in `rustls-webpki`
+(distrusted intermediate certificates could be accepted). We updated the
+dependency the same day.
 
 ## Install
 
