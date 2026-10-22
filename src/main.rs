@@ -5,6 +5,7 @@ mod glance;
 mod keystone;
 mod neutron;
 mod nova;
+mod tls;
 
 use cinder::Volume;
 use clap::{Parser, Subcommand};
@@ -19,6 +20,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Cell, Clear, Paragraph, Row, Table, TableState};
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 #[derive(Parser, Debug)]
@@ -28,6 +30,12 @@ use std::time::{Duration, Instant};
     about = env!("CARGO_PKG_DESCRIPTION"),
 )]
 struct Args {
+    /// PEM file with extra CA certificates to trust, for a cloud that uses
+    /// a private CA. These are added to the operating system's trust
+    /// store. Overrides OS_CACERT and `cacert` in clouds.yaml.
+    #[arg(long, value_name = "PATH")]
+    cacert: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -50,6 +58,15 @@ fn main() {
         return;
     }
 
+    // Same order as the `openstack` CLI: command-line flag, then the
+    // OS_CACERT environment variable, then `cacert` in clouds.yaml. The
+    // flag and the variable are checked first, so a bad path fails fast
+    // before any setup prompt.
+    let cacert_override = args
+        .cacert
+        .or_else(|| std::env::var_os("OS_CACERT").map(PathBuf::from));
+    let override_roots = cacert_override.as_deref().map(load_ca_or_exit);
+
     let cloud_auth = match auth::discover() {
         Some(a) => a,
         None => match auth::run_setup_wizard() {
@@ -61,8 +78,16 @@ fn main() {
         },
     };
 
+    let extra_roots = match override_roots {
+        Some(certs) => certs,
+        None => match &cloud_auth.cacert {
+            Some(path) => load_ca_or_exit(Path::new(path)),
+            None => Vec::new(),
+        },
+    };
+
     eprintln!("Logging in to {} ...", cloud_auth.auth_url);
-    let session = match Session::login(&cloud_auth) {
+    let session = match Session::login(&cloud_auth, extra_roots) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Login failed: {e}");
@@ -80,6 +105,16 @@ fn main() {
     if let Err(e) = res {
         eprintln!("Error: {e}");
         std::process::exit(1);
+    }
+}
+
+fn load_ca_or_exit(path: &Path) -> Vec<reqwest::Certificate> {
+    match tls::load_ca_bundle(path) {
+        Ok(certs) => certs,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
     }
 }
 

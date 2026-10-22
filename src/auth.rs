@@ -18,6 +18,10 @@ pub struct CloudAuth {
     #[serde(default = "default_domain")]
     pub project_domain_name: String,
     pub region_name: Option<String>,
+    /// PEM file with extra CA certificates to trust for this cloud
+    /// (`cacert` in clouds.yaml, as used by the `openstack` CLI).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cacert: Option<String>,
 }
 
 fn default_domain() -> String {
@@ -33,6 +37,7 @@ struct CloudsFile {
 struct CloudEntry {
     auth: AuthSection,
     region_name: Option<String>,
+    cacert: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -95,6 +100,7 @@ fn load_clouds_yaml(cloud_name: Option<&str>) -> Option<CloudAuth> {
                 user_domain_name: entry.auth.user_domain_name.clone(),
                 project_domain_name: entry.auth.project_domain_name.clone(),
                 region_name: entry.region_name.clone(),
+                cacert: entry.cacert.clone(),
             });
         }
     }
@@ -111,6 +117,7 @@ fn load_from_env() -> Option<CloudAuth> {
         project_domain_name: std::env::var("OS_PROJECT_DOMAIN_NAME")
             .unwrap_or_else(|_| default_domain()),
         region_name: std::env::var("OS_REGION_NAME").ok(),
+        cacert: None, // OS_CACERT is read in main, together with --cacert
     })
 }
 
@@ -154,6 +161,7 @@ pub fn run_setup_wizard() -> std::io::Result<CloudAuth> {
         user_domain_name,
         project_domain_name,
         region_name,
+        cacert: None,
     };
 
     if let Some(path) = stackboard_config_path() {
@@ -247,5 +255,22 @@ clouds:
         assert_eq!(entry.auth.auth_url, "https://example.com:5000/v3");
         assert_eq!(entry.auth.user_domain_name, "Default"); // default applied
         assert_eq!(entry.region_name.as_deref(), Some("RegionOne"));
+        assert_eq!(entry.cacert, None);
+    }
+
+    #[test]
+    fn clouds_yaml_reads_cacert() {
+        let yaml = r#"
+clouds:
+  test:
+    auth:
+      auth_url: https://example.com:5000/v3
+    cacert: /etc/ssl/private-ca.pem
+"#;
+        let file: CloudsFile = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(
+            file.clouds["test"].cacert.as_deref(),
+            Some("/etc/ssl/private-ca.pem")
+        );
     }
 }
